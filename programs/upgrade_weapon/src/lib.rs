@@ -26,10 +26,11 @@ mod upgrade_weapon {
         Ok(())
     }
 
-    pub fn mint(ctx: Context<MintToken>, token_type: u64) -> ProgramResult {
+    pub fn mint(ctx: Context<MintToken>, token_type: u8) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
 
         msg!("Creating token account");
+        msg!(&token_type.to_string());
 
         anchor_lang::system_program::create_account(
             CpiContext::new(
@@ -113,10 +114,11 @@ mod upgrade_weapon {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
 
         let token_id: u64 = upgrade_weapon.token_type_counter;
+        let u64_token_type: u64 = token_type.into();
 
         upgrade_weapon.token_types.push(TokenType {
             id: token_id,
-            token_type,
+            token_type: u64_token_type,
         });
 
         upgrade_weapon.token_counter += 1;
@@ -129,7 +131,7 @@ mod upgrade_weapon {
         let index = upgrade_weapon
             .token_type_uris
             .iter()
-            .position(|t| t.id == token_type)
+            .position(|t| t.id == u64_token_type)
             .unwrap();
         let token_type_uri: String = upgrade_weapon.token_type_uris[index].token_uri.clone();
 
@@ -164,6 +166,27 @@ mod upgrade_weapon {
         )?;
 
         msg!("Token mint process completed successfully.");
+
+        invoke(
+            &mpl_token_metadata::instruction::create_master_edition_v3(
+                mpl_token_metadata::ID,
+                ctx.accounts.edition.key(),
+                ctx.accounts.mint.key(),
+                ctx.accounts.authority.key(),
+                ctx.accounts.authority.key(),
+                ctx.accounts.metadata_account.key(),
+                ctx.accounts.authority.key(),
+                None
+            ),
+            &[
+                ctx.accounts.edition.to_account_info(),
+                ctx.accounts.metadata_account.to_account_info(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.token_account.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
 
         Ok(())
     }
@@ -270,22 +293,26 @@ mod upgrade_weapon {
         #[account(mut)]
         pub authority: Signer<'info>,
 
-        pub system_program: Program<'info, System>,
-        pub token_program: Program<'info, Token>,
-
         /// CHECK: We will create this outside
         #[account(mut)]
         pub metadata_account: UncheckedAccount<'info>,
 
+        /// CHECK: We will create this outside
+        #[account(mut)]
+        pub edition: UncheckedAccount<'info>,
+
         pub rent: Sysvar<'info, Rent>,
 
+        /// CHECK: We will create this outside
+        pub system_program: Program<'info, System>,
+        /// CHECK: We will create this outside
+        pub token_program: Program<'info, Token>,
         /// CHECK: We will create this outside
         pub token_metadata_program: UncheckedAccount<'info>,
         pub associated_token_program: Program<'info, anchor_spl::associated_token::AssociatedToken>,
     }
 
     pub fn transfer(ctx: Context<Transfer>) -> ProgramResult {
-
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             anchor_spl::token::Transfer {
@@ -299,6 +326,35 @@ mod upgrade_weapon {
         );
 
         anchor_spl::token::transfer(cpi_ctx, 1)?;
+
+        Ok(())
+    }
+
+    pub fn burn(ctx: Context<Burn>) -> ProgramResult {
+        msg!("Burning token");
+
+        invoke(
+            &mpl_token_metadata::instruction::burn_nft(
+                ctx.accounts.token_metadata_program.key(),
+                ctx.accounts.metadata_account.key(),
+                ctx.accounts.authority.key(),
+                ctx.accounts.mint.key(),
+                ctx.accounts.association_token_account.key(),
+                ctx.accounts.metadata_edition_account.key(),
+                ctx.accounts.token_program.key(),
+                None,
+            ),
+            &[
+                ctx.accounts.token_metadata_program.to_account_info(),
+                ctx.accounts.metadata_account.to_account_info(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.association_token_account.to_account_info(),
+                ctx.accounts.metadata_edition_account.to_account_info(),
+            ],
+        )?;
+        msg!("Burning token completed");
 
         Ok(())
     }
@@ -317,7 +373,7 @@ mod upgrade_weapon {
         /// CHECK:
         #[account(mut)]
         pub to: UncheckedAccount<'info>,
-    
+
         #[account(
             init_if_needed,
             payer = from,
@@ -371,6 +427,28 @@ mod upgrade_weapon {
         /// CHECK: No checks through types are necessary for the `user` account.
         pub user: AccountInfo<'info>,
         pub token_account: Account<'info, TokenAccount>,
+    }
+
+    #[derive(Accounts)]
+    pub struct Burn<'info> {
+        /// CHECK: We will create this outside
+        #[account(mut)]
+        metadata_account: UncheckedAccount<'info>,
+        #[account(mut)]
+        pub authority: Signer<'info>,
+        #[account(mut)]
+        pub mint: Account<'info, anchor_spl::token::Mint>,
+        #[account(mut)]
+        pub association_token_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+        /// CHECK: We will create this outside
+        #[account(mut)]
+        pub metadata_edition_account: UncheckedAccount<'info>,
+
+        /// CHECK: We will create this outside
+        pub token_program: Program<'info, Token>,
+        /// CHECK: We will create this outside
+        pub token_metadata_program: UncheckedAccount<'info>,
     }
 
     #[account]
