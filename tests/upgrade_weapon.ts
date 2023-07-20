@@ -131,8 +131,6 @@ describe("UpgradeWeapon", () => {
   it("should burn the token", async () => {
     const program = anchor.workspace.UpgradeWeapon;
 
-    const key = anchor.AnchorProvider.env().wallet.publicKey;
-
     const tokenAddress = await anchor.utils.token.associatedAddress({
       mint: mintKey.publicKey,
       owner: key,
@@ -166,13 +164,13 @@ describe("UpgradeWeapon", () => {
       .accounts({
         mint: mintKey.publicKey,
         associationTokenAccount: tokenAddress,
-        authority: key,
+        authority: authority.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
         metadataAccount: metadataAddress,
         metadataEditionAccount: metadataEditionAddress,
         tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
       })
-      .signers([anchor.AnchorProvider.env().wallet.payer])
+      .signers([authority.payer])
       .rpc();
 
     assert.exists(txSig);
