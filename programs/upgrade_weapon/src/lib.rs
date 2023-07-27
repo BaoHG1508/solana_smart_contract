@@ -29,9 +29,6 @@ mod upgrade_weapon {
     pub fn mint(ctx: Context<MintToken>, token_type: u8) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
 
-        msg!("Creating token account");
-        msg!(&token_type.to_string());
-
         anchor_lang::system_program::create_account(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -44,10 +41,6 @@ mod upgrade_weapon {
             82,
             &ctx.accounts.token_program.key(),
         )?;
-
-        msg!("Token account created successfully");
-
-        msg!("Initialize mint");
 
         anchor_spl::token::initialize_mint(
             CpiContext::new(
@@ -62,32 +55,6 @@ mod upgrade_weapon {
             Some(&ctx.accounts.authority.key()),
         )?;
 
-        msg!("Token account initialized successfully");
-
-        msg!("Creating associated token account");
-
-        //log all context account
-        msg!(&ctx
-            .accounts
-            .token_account
-            .to_account_info()
-            .key()
-            .to_string());
-        msg!(&ctx.accounts.authority.to_account_info().key().to_string());
-        msg!(&ctx.accounts.mint.to_account_info().key().to_string());
-        msg!(&ctx
-            .accounts
-            .system_program
-            .to_account_info()
-            .key()
-            .to_string());
-        msg!(&ctx
-            .accounts
-            .token_program
-            .to_account_info()
-            .key()
-            .to_string());
-
         anchor_spl::associated_token::create(CpiContext::new(
             ctx.accounts.token_account.to_account_info(),
             anchor_spl::associated_token::Create {
@@ -100,8 +67,6 @@ mod upgrade_weapon {
             },
         ))?;
 
-        msg!("Associated token account created successfully");
-
         // Create the MintTo struct for our context
         let cpi_accounts = MintTo {
             mint: ctx.accounts.mint.to_account_info(),
@@ -110,7 +75,6 @@ mod upgrade_weapon {
         };
 
         let cpi_program = ctx.accounts.token_program.to_account_info();
-        // Create the CpiContext we need for the request
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
 
         let token_id: u64 = upgrade_weapon.token_type_counter;
@@ -133,9 +97,7 @@ mod upgrade_weapon {
             .iter()
             .position(|t| t.id == u64_token_type)
             .unwrap();
-        let token_type_uri: String = upgrade_weapon.token_type_uris[index].token_uri.clone();
-
-        msg!(&token_type_uri);
+        let token_type_uri = upgrade_weapon.token_type_uris[index].clone();
 
         invoke(
             &mpl_token_metadata::instruction::create_metadata_accounts_v3(
@@ -145,9 +107,9 @@ mod upgrade_weapon {
                 ctx.accounts.authority.key(),
                 ctx.accounts.authority.key(),
                 ctx.accounts.authority.key(),
-                upgrade_weapon.name.clone(),
+                token_type_uri.name.clone(),
                 upgrade_weapon.symbol.clone(),
-                token_type_uri,
+                token_type_uri.token_uri + "/2/" + &ctx.accounts.weapon_account.key().to_string(),
                 None,
                 1,
                 true,
@@ -176,7 +138,7 @@ mod upgrade_weapon {
                 ctx.accounts.authority.key(),
                 ctx.accounts.metadata_account.key(),
                 ctx.accounts.authority.key(),
-                None
+                None,
             ),
             &[
                 ctx.accounts.edition.to_account_info(),
@@ -188,10 +150,23 @@ mod upgrade_weapon {
             ],
         )?;
 
+        let metadata_acc: &mut Account<'_, Weapon> = &mut ctx.accounts.weapon_account;
+
+        metadata_acc.level = 0;
+        metadata_acc.hp = 0;
+        metadata_acc.damage = 0;
+        metadata_acc.mana = 0;
+        metadata_acc.mp_regen = 0;
+        metadata_acc.atk_speed = 0;
+
         Ok(())
     }
 
-    pub fn add_token_type(ctx: Context<AddTokenType>, token_uri: String) -> ProgramResult {
+    pub fn add_token_type(
+        ctx: Context<AddTokenType>,
+        token_uri: String,
+        name: String,
+    ) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
 
         msg!("Adding token");
@@ -204,6 +179,7 @@ mod upgrade_weapon {
         upgrade_weapon.token_type_uris.push(TokenTypeURI {
             id: token_type_counter,
             token_uri,
+            name,
         });
         upgrade_weapon.token_type_counter += 1;
 
@@ -296,6 +272,14 @@ mod upgrade_weapon {
         /// CHECK: We will create this outside
         #[account(mut)]
         pub metadata_account: UncheckedAccount<'info>,
+
+        /// CHECK: We will create this outside
+        #[account(
+            init,
+            payer = authority,
+            space = 8 + 2 + 4 + 200 + 1, seeds = [b"weapon", mint.key().as_ref()], bump
+        )]
+        pub weapon_account: Account<'info, Weapon>,
 
         /// CHECK: We will create this outside
         #[account(mut)]
@@ -464,6 +448,7 @@ mod upgrade_weapon {
         InvalidTokenType,
         InvalidTokenId,
         InvalidTokenOwner,
+        InvalidBalance
     }
 
     impl From<ErrorCode> for ProgramError {
@@ -472,6 +457,7 @@ mod upgrade_weapon {
                 ErrorCode::InvalidTokenType => ProgramError::Custom(1),
                 ErrorCode::InvalidTokenId => ProgramError::Custom(2),
                 ErrorCode::InvalidTokenOwner => ProgramError::Custom(3),
+                ErrorCode::InvalidBalance => ProgramError::Custom(4),
             }
         }
     }
@@ -495,5 +481,100 @@ mod upgrade_weapon {
     pub struct TokenTypeURI {
         pub id: u64,
         pub token_uri: String,
+        pub name: String,
+    }
+
+    #[account]
+    pub struct Weapon {
+        level: u64,
+        hp: u64,
+        damage: u64,
+        mana: u64,
+        mp_regen: u64,
+        atk_speed: u64,
+    }
+
+    #[derive(Accounts)]
+    #[instruction(level: [u64; 6])]
+    pub struct UpgradeWeaponLevel<'info> {
+        #[account(mut)]
+        pub owner: Signer<'info>,
+
+        #[account(mut)]
+        pub weapon_account: Account<'info, Weapon>,
+
+        #[account(mut, address=solana_program::pubkey!("A1cjGLEjuiw946mrHFCcWZggQDW89j3ViaqBXLsfojaF"))]
+        pub authority: Signer<'info>,
+
+        #[account(mut)]
+        pub mint: Account<'info, anchor_spl::token::Mint>,
+
+        #[account(mut)]
+        pub gold_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+        pub token_program: Program<'info, Token>,
+    }
+
+    pub fn upgrade_weapon_level(
+        ctx: Context<UpgradeWeaponLevel>,
+        level: [u64; 6],
+    ) -> ProgramResult {
+        let metadata_acc: &mut Account<'_, Weapon> = &mut ctx.accounts.weapon_account;
+        let token_account = &mut ctx.accounts.gold_account;
+
+        let current_hp = metadata_acc.hp;
+        let current_damage = metadata_acc.damage;
+        let current_mana = metadata_acc.mana;
+        let current_mp_regen = metadata_acc.mp_regen;
+        let current_atk_speed = metadata_acc.atk_speed;
+
+        let burn_amount: u64 = {
+            let hp_difference = level[1].saturating_sub(current_hp);
+            let damage_difference = level[2].saturating_sub(current_damage);
+            let mana_difference = level[3].saturating_sub(current_mana);
+            let mp_regen_difference = level[4].saturating_sub(current_mp_regen);
+            let atk_speed_difference = level[5].saturating_sub(current_atk_speed);
+
+            let calculate_burn_amount = |diff, value| {
+                if diff >= 1 {
+                    value * 10 + 100
+                } else {
+                    0
+                }
+            };
+
+            calculate_burn_amount(hp_difference, level[1])
+                .saturating_add(calculate_burn_amount(damage_difference, level[2]))
+                .saturating_add(calculate_burn_amount(mana_difference, level[3]))
+                .saturating_add(calculate_burn_amount(mp_regen_difference, level[4]))
+                .saturating_add(calculate_burn_amount(atk_speed_difference, level[5]))
+        };
+
+
+        msg!("Burn amount: {}", burn_amount);
+
+        if token_account.amount < burn_amount {
+            return Err(ErrorCode::InvalidBalance.into());
+        }
+
+        let cpi_ctx: CpiContext<'_, '_, '_, '_, anchor_spl::token::Burn<'_>> = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            anchor_spl::token::Burn {
+                from: ctx.accounts.gold_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                authority: ctx.accounts.owner.to_account_info(),
+            },
+        );
+ 
+        anchor_spl::token::burn(cpi_ctx, burn_amount)?;
+
+        metadata_acc.level = level[0];
+        metadata_acc.hp = level[1];
+        metadata_acc.damage = level[2];
+        metadata_acc.mana = level[3];
+        metadata_acc.mp_regen = level[4];
+        metadata_acc.atk_speed = level[5];
+
+        Ok(())
     }
 }

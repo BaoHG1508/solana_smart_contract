@@ -5,6 +5,7 @@
     },
     "dependencies": {
         "@coral-xyz/anchor": "^0.28.0",
+        "@metaplex-foundation/js": "^0.19.4",
         "@project-serum/borsh": "^0.2.5",
         "base58": "^2.0.1",
         "borsh": "^0.7.0",

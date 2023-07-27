@@ -11,24 +11,8 @@ mod upgrade_weapon_gold {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, name: String, symbol: String) -> ProgramResult {
+    pub fn initialize(ctx: Context<Initialize>) -> ProgramResult {
         msg!("Initializing upgrade weapon program");
-        let upgrade_weapon_gold = &mut ctx.accounts.upgrade_weapon_gold;
-        upgrade_weapon_gold.name = name;
-        upgrade_weapon_gold.symbol = symbol;
-        Ok(())
-    }
-
-    // Define account structures
-
-    #[account]
-    pub struct UpgradeWeapon {
-        pub name: String,
-        pub symbol: String,
-    }
-
-    pub fn mint(ctx: Context<MintToken>, amount: u64) -> ProgramResult {
-        msg!("Creating token account");
 
         anchor_lang::system_program::create_account(
             CpiContext::new(
@@ -43,9 +27,7 @@ mod upgrade_weapon_gold {
             &ctx.accounts.token_program.key(),
         )?;
 
-        msg!("Token account created successfully");
-
-        msg!("Initialize mint");
+        msg!("create_account ");
 
         anchor_spl::token::initialize_mint(
             CpiContext::new(
@@ -60,19 +42,24 @@ mod upgrade_weapon_gold {
             Some(&ctx.accounts.authority.key()),
         )?;
 
-        anchor_spl::associated_token::create(CpiContext::new(
-            ctx.accounts.token_account.to_account_info(),
-            anchor_spl::associated_token::Create {
-                payer: ctx.accounts.authority.to_account_info(),
-                associated_token: ctx.accounts.token_account.to_account_info(),
-                authority: ctx.accounts.authority.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-        ))?;
+        let upgrade_weapon_gold: &mut Box<Account<'_, UpgradeWeapon>> =
+            &mut ctx.accounts.upgrade_weapon_gold;
+        upgrade_weapon_gold.name = "Upgrade Weapon Gold".to_string();
+        upgrade_weapon_gold.symbol = "GOLD".to_string();
 
-        msg!("Associated token account created successfully");
+        Ok(())
+    }
+
+    // Define account structures
+
+    #[account]
+    pub struct UpgradeWeapon {
+        pub name: String,
+        pub symbol: String,
+    }
+
+    pub fn mint(ctx: Context<MintToken>, amount: u64) -> ProgramResult {
+        msg!("Creating token account");        
 
         // Create the MintTo struct for our context
         let cpi_accounts = MintTo {
@@ -100,11 +87,20 @@ mod upgrade_weapon_gold {
         pub mint: Signer<'info>,
 
         /// CHECK: This is the token account that we want to mint tokens to
-        #[account(mut)]
-        pub token_account: UncheckedAccount<'info>,
+        #[account(
+            init_if_needed,
+            payer = to,
+            associated_token::mint = mint,
+            associated_token::authority = to
+        )]
+        pub token_account: Account<'info, anchor_spl::token::TokenAccount>,
 
-        #[account(mut)]
+        #[account(mut, address=solana_program::pubkey!("A1cjGLEjuiw946mrHFCcWZggQDW89j3ViaqBXLsfojaF"))]
         pub authority: Signer<'info>,
+
+        /// CHECK: This is the token account that we want to mint tokens to
+        #[account(mut)]
+        pub to: Signer<'info>,
 
         pub system_program: Program<'info, System>,
         pub token_program: Program<'info, Token>,
@@ -159,14 +155,17 @@ mod upgrade_weapon_gold {
     }
 
     #[derive(Accounts)]
-    #[instruction(name: String, symbol: String)]
     pub struct Initialize<'info> {
-        #[account(init, payer = user, space = 1000 + size_of::<UpgradeWeapon>())]
+        #[account(init, payer = authority, space = 1000 + size_of::<UpgradeWeapon>())]
         pub upgrade_weapon_gold: Box<Account<'info, UpgradeWeapon>>,
-        #[account(mut)]
-        /// CHECK: No checks through types are necessary for the `user` account.
-        pub user: Signer<'info>,
+        #[account(mut,address=solana_program::pubkey!("A1cjGLEjuiw946mrHFCcWZggQDW89j3ViaqBXLsfojaF"))]
+        pub authority: Signer<'info>,
         pub system_program: Program<'info, System>,
+        pub token_program: Program<'info, Token>,
+        pub rent: Sysvar<'info, Rent>,
+
+        #[account(mut)]
+        pub mint: Signer<'info>,
     }
 
     pub fn burn(ctx: Context<Burn>, amount: u64) -> ProgramResult {
@@ -195,7 +194,7 @@ mod upgrade_weapon_gold {
 
         #[account(mut)]
         pub association_token_account: Account<'info, anchor_spl::token::TokenAccount>,
-    
+
         pub token_program: Program<'info, Token>,
     }
 }
