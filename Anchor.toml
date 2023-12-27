@@ -3,7 +3,7 @@ seeds = false
 skip-lint = false
 [programs.localnet]
 upgrade_weapon = "HbtfwD3hs3jzJmAAf6TmVA7m28Xmj78HgPuehVM6cWbe"
-upgrade_weapon_gold = "H3nF7bwSU5h28m4M28i98aGfiqHy3pReESu8Frii6GzY"
+upgrade_weapon_gold = "DzQ8R1zfFgZG4oyB4ozsP4CbNkmM2z4nZyurdhCht1JC"
 
 [[test.genesis]]
 address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
@@ -13,7 +13,7 @@ program = "target/deploy/mpl_token_metadata.so"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "/Users/nobody1/.config/solana/id.json"
 
 [scripts]

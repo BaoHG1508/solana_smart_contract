@@ -3,7 +3,7 @@ use anchor_lang::solana_program::entrypoint::ProgramResult;
 use anchor_spl::token::{MintTo, Token};
 use std::mem::size_of;
 
-declare_id!("H3nF7bwSU5h28m4M28i98aGfiqHy3pReESu8Frii6GzY");
+declare_id!("DzQ8R1zfFgZG4oyB4ozsP4CbNkmM2z4nZyurdhCht1JC");
 
 #[program]
 mod upgrade_weapon_gold {

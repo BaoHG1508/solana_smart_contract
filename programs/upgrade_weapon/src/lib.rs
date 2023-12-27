@@ -26,8 +26,14 @@ mod upgrade_weapon {
         Ok(())
     }
 
-    pub fn mint(ctx: Context<MintToken>, token_type: u8) -> ProgramResult {
+    pub fn mint(ctx: Context<MintToken>, token_type: u8, device_id: String) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
+        let device_account: &mut Account<'_, UWDeviceAccount> = &mut ctx.accounts.device_account;
+
+        // Check if token type exists in device account
+        if device_account.token_type.contains(&token_type) {
+            return Err(ErrorCode::DuplicatedDevice.into());
+        }
 
         anchor_lang::system_program::create_account(
             CpiContext::new(
@@ -253,7 +259,13 @@ mod upgrade_weapon {
         pub symbol: String,
     }
 
+    #[account]
+    pub struct UWDeviceAccount {
+        pub token_type: Vec<u8>,
+    }
+
     #[derive(Accounts)]
+    #[instruction(token_type: u8, device_id: String)]
     pub struct MintToken<'info> {
         /// CHECK: This is the token that we want to mint
         #[account(mut)]
@@ -280,6 +292,14 @@ mod upgrade_weapon {
             space = 8 + 2 + 4 + 200 + 1, seeds = [b"weapon", mint.key().as_ref()], bump
         )]
         pub weapon_account: Account<'info, Weapon>,
+
+        /// CHECK: We will create this outside
+        #[account(
+            init,
+            payer = authority,
+            space = 8, seeds = [b"deviceData", &token_type.ref, &device_id.as_bytes().as_ref()], bump
+        )]
+        pub device_account: Account<'info, UWDeviceAccount>,        
 
         /// CHECK: We will create this outside
         #[account(mut)]
@@ -448,7 +468,8 @@ mod upgrade_weapon {
         InvalidTokenType,
         InvalidTokenId,
         InvalidTokenOwner,
-        InvalidBalance
+        InvalidBalance,
+        DuplicatedDevice,
     }
 
     impl From<ErrorCode> for ProgramError {
@@ -458,6 +479,7 @@ mod upgrade_weapon {
                 ErrorCode::InvalidTokenId => ProgramError::Custom(2),
                 ErrorCode::InvalidTokenOwner => ProgramError::Custom(3),
                 ErrorCode::InvalidBalance => ProgramError::Custom(4),
+                ErrorCode::DuplicatedDevice => ProgramError::Custom(5),
             }
         }
     }
@@ -475,6 +497,12 @@ mod upgrade_weapon {
     pub struct TokenType {
         pub id: u64,
         pub token_type: u64,
+    }
+
+    #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+    pub struct TokenDevice {
+        pub token_type: u8,
+        pub device_id: String,
     }
 
     #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -505,14 +533,6 @@ mod upgrade_weapon {
 
         #[account(mut, address=solana_program::pubkey!("A1cjGLEjuiw946mrHFCcWZggQDW89j3ViaqBXLsfojaF"))]
         pub authority: Signer<'info>,
-
-        #[account(mut)]
-        pub mint: Account<'info, anchor_spl::token::Mint>,
-
-        #[account(mut)]
-        pub gold_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-        pub token_program: Program<'info, Token>,
     }
 
     pub fn upgrade_weapon_level(
@@ -520,53 +540,6 @@ mod upgrade_weapon {
         level: [u64; 6],
     ) -> ProgramResult {
         let metadata_acc: &mut Account<'_, Weapon> = &mut ctx.accounts.weapon_account;
-        let token_account = &mut ctx.accounts.gold_account;
-
-        let current_hp = metadata_acc.hp;
-        let current_damage = metadata_acc.damage;
-        let current_mana = metadata_acc.mana;
-        let current_mp_regen = metadata_acc.mp_regen;
-        let current_atk_speed = metadata_acc.atk_speed;
-
-        let burn_amount: u64 = {
-            let hp_difference = level[1].saturating_sub(current_hp);
-            let damage_difference = level[2].saturating_sub(current_damage);
-            let mana_difference = level[3].saturating_sub(current_mana);
-            let mp_regen_difference = level[4].saturating_sub(current_mp_regen);
-            let atk_speed_difference = level[5].saturating_sub(current_atk_speed);
-
-            let calculate_burn_amount = |diff, value| {
-                if diff >= 1 {
-                    value * 10 + 100
-                } else {
-                    0
-                }
-            };
-
-            calculate_burn_amount(hp_difference, level[1])
-                .saturating_add(calculate_burn_amount(damage_difference, level[2]))
-                .saturating_add(calculate_burn_amount(mana_difference, level[3]))
-                .saturating_add(calculate_burn_amount(mp_regen_difference, level[4]))
-                .saturating_add(calculate_burn_amount(atk_speed_difference, level[5]))
-        };
-
-
-        msg!("Burn amount: {}", burn_amount);
-
-        if token_account.amount < burn_amount {
-            return Err(ErrorCode::InvalidBalance.into());
-        }
-
-        let cpi_ctx: CpiContext<'_, '_, '_, '_, anchor_spl::token::Burn<'_>> = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            anchor_spl::token::Burn {
-                from: ctx.accounts.gold_account.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                authority: ctx.accounts.owner.to_account_info(),
-            },
-        );
- 
-        anchor_spl::token::burn(cpi_ctx, burn_amount)?;
 
         metadata_acc.level = level[0];
         metadata_acc.hp = level[1];

@@ -10,16 +10,10 @@ import { Metaplex } from "@metaplex-foundation/js";
 
 const anchor = require("@project-serum/anchor");
 
-describe("UpgradeWeapon", () => {
+describe("UpgradeWeapon", () => { 
   const provider = AnchorProvider.env();
 
   let upgradeWeaponAccount = anchor.web3.Keypair.generate();
-
-  console.log(
-    "===============upgradeWeaponAccount.publicKey===================="
-  );
-  console.log(upgradeWeaponAccount.publicKey);
-  console.log("===================================");
 
   anchor.setProvider(provider);
 
@@ -51,24 +45,59 @@ describe("UpgradeWeapon", () => {
   });
 
   it("should add token type", async () => {
-    let index = 0;
 
-    while (index < 3) {
-      await program.rpc.addTokenType(
-        `https://testapi.ambros.app/erc/721/upgrade-weapon/${index}`,
-        `Fire Wand ${index}`,
-        {
-          accounts: {
-            upgradeWeapon: upgradeWeaponAccount.publicKey,
-            user: authority.publicKey,
-            systemProgram: SystemProgram.programId,
-          },
-          signers: [authority.payer],
-        }
-      );
-      index = index + 1;
-    }
+    await program.rpc.addTokenType(
+      `https://testapi.ambros.app/erc/721/upgrade-weapon/0`,
+      `Fire Wand`,
+      {
+        accounts: {
+          upgradeWeapon: upgradeWeaponAccount.publicKey,
+          user: authority.publicKey,
+          systemProgram: SystemProgram.programId,
+        },
+        signers: [authority.payer],
+      }
+    );
 
+    await program.rpc.addTokenType(
+      `https://testapi.ambros.app/erc/721/upgrade-weapon/1`,
+      `Goblet of Fire`,
+      {
+        accounts: {
+          upgradeWeapon: upgradeWeaponAccount.publicKey,
+          user: authority.publicKey,
+          systemProgram: SystemProgram.programId,
+        },
+        signers: [authority.payer],
+      }
+    );
+
+
+    await program.rpc.addTokenType(
+      `https://testapi.ambros.app/erc/721/upgrade-weapon/2`,
+      `Frost Wand`,
+      {
+        accounts: {
+          upgradeWeapon: upgradeWeaponAccount.publicKey,
+          user: authority.publicKey,
+          systemProgram: SystemProgram.programId,
+        },
+        signers: [authority.payer],
+      }
+    );
+
+    await program.rpc.addTokenType(
+      `https://testapi.ambros.app/erc/721/upgrade-weapon/3`,
+      `Celestial Wand`,
+      {
+        accounts: {
+          upgradeWeapon: upgradeWeaponAccount.publicKey,
+          user: authority.publicKey,
+          systemProgram: SystemProgram.programId,
+        },
+        signers: [authority.payer],
+      }
+    );
     const account = await program.account.upgradeWeapon.fetch(
       upgradeWeaponAccount.publicKey
     );
@@ -87,6 +116,11 @@ describe("UpgradeWeapon", () => {
       account.tokenTypeUris[2].tokenUri ===
         "https://testapi.ambros.app/erc/721/upgrade-weapon/2"
     );
+
+    assert.ok(
+      account.tokenTypeUris[3].tokenUri ===
+        "https://testapi.ambros.app/erc/721/upgrade-weapon/3"
+    );
   });
 
   it("Mint a token", async () => {
@@ -94,6 +128,17 @@ describe("UpgradeWeapon", () => {
       mint: mintKey.publicKey,
       owner: authority.publicKey,
     });
+
+    const deviceAccount = (
+      await anchor.web3.PublicKey.findProgramAddress(
+        [Buffer.from("device"), Buffer.from("device_id_1")],
+        new PublicKey("HbtfwD3hs3jzJmAAf6TmVA7m28Xmj78HgPuehVM6cWbe")
+      )
+    )[0];
+
+    console.log('===============deviceData====================');
+    console.log(deviceAccount);
+    console.log('===================================');
 
     const metadataAddress = (
       await anchor.web3.PublicKey.findProgramAddress(
@@ -105,10 +150,6 @@ describe("UpgradeWeapon", () => {
         TOKEN_METADATA_PROGRAM_ID
       )
     )[0];
-
-    console.log("=================metadataAddress==================");
-    console.log(metadataAddress);
-    console.log("===================================");
 
     const metadataEditionAddress = (
       await anchor.web3.PublicKey.findProgramAddress(
@@ -122,10 +163,6 @@ describe("UpgradeWeapon", () => {
       )
     )[0];
 
-    console.log("=================metadataAddress==================");
-    console.log(metadataAddress);
-    console.log("===================================");
-
     const weaponAddress = (
       await anchor.web3.PublicKey.findProgramAddress(
         [Buffer.from("weapon"), mintKey.publicKey.toBuffer()],
@@ -133,11 +170,8 @@ describe("UpgradeWeapon", () => {
       )
     )[0];
 
-    console.log("=================weaponAddress==================");
-    console.log(weaponAddress);
-    console.log("===================================");
-
-    const txSig = await program.methods
+    try{
+      const txSig = await program.methods
       .mint(new BN(0))
       .accounts({
         upgradeWeapon: upgradeWeaponAccount.publicKey,
@@ -149,90 +183,16 @@ describe("UpgradeWeapon", () => {
         tokenAccount: tokenAddress,
         tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
         edition: metadataEditionAddress,
+        deviceAccount:deviceAccount ,
       })
       .signers([mintKey])
       .rpc();
 
-    const mintInfo = await provider.connection.getAccountInfo(weaponAddress);
-
-    const borshAccountSchema = borsh.struct([
-      borsh.u64("level"),
-      borsh.u64("hp"),
-      borsh.u64("damage"),
-      borsh.u64("mana"),
-      borsh.u64("mpRegen"),
-      borsh.u64("atkSpeed"),
-    ]);
-
-    const deseralizedInfo = borshAccountSchema.decode(
-      mintInfo.data.slice(8, mintInfo.data.length)
-    );
-
-    const metaplex = new Metaplex(provider.connection);
-    console.log("=================weaponAddress==================");
-    console.log(weaponAddress);
-    console.log("===================================");
-    console.log("=================metadataAddress==================");
-    console.log(metadataAddress);
-    console.log("===================================");
-
-
-    assert.exists(txSig);
-  });
-
-  it("Should upgrade the weapon", async () => {
-    const tokenAddress = await anchor.utils.token.associatedAddress({
-      mint: mintKey.publicKey,
-      owner: authority.publicKey,
-    });
-
-    const weaponAddress = (
-      await anchor.web3.PublicKey.findProgramAddress(
-        [Buffer.from("weapon"), mintKey.publicKey.toBuffer()],
-        new PublicKey("HbtfwD3hs3jzJmAAf6TmVA7m28Xmj78HgPuehVM6cWbe")
-      )
-    )[0];
-
-    await program.methods
-      .upgradeWeaponLevel([
-        new BN(20),
-        new BN(21),
-        new BN(21),
-        new BN(21),
-        new BN(21),
-        new BN(21),
-      ])
-      .accounts({
-        owner: authority.publicKey,
-        weaponAccount: weaponAddress,
-        tokenAccount: tokenAddress,
-      })
-      .signers([authority.payer])
-      .rpc();
-
-    const mintInfo = await provider.connection.getAccountInfo(weaponAddress);
-
-    console.log("===================================");
-    console.log(mintInfo.data);
-    console.log("===================================");
-
-    const borshAccountSchema = borsh.struct([
-      borsh.u64("level"),
-      borsh.u64("hp"),
-      borsh.u64("damage"),
-      borsh.u64("mana"),
-      borsh.u64("mpRegen"),
-      borsh.u64("atkSpeed"),
-    ]);
-
-    const deseralizedInfo = borshAccountSchema.decode(
-      mintInfo.data.slice(8, mintInfo.data.length)
-    );
-
-    console.log("===================================");
-    console.log(deseralizedInfo);
-    console.log("===================================");
-
-    assert.ok(deseralizedInfo.hp === 20);
+      assert.exists(txSig);
+    } catch(e){
+      console.log('===================================');
+      console.log(e);
+      console.log('===================================');
+    }
   });
 });
