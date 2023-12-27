@@ -22,16 +22,15 @@ mod upgrade_weapon {
         upgrade_weapon.symbol = symbol;
         upgrade_weapon.token_types = vec![];
         upgrade_weapon.token_type_uris = vec![];
+        upgrade_weapon.devices = vec![];
 
         Ok(())
     }
 
     pub fn mint(ctx: Context<MintToken>, token_type: u8, device_id: String) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
-        let device_account: &mut Account<'_, UWDeviceAccount> = &mut ctx.accounts.device_account;
 
-        // Check if token type exists in device account
-        if device_account.token_type.contains(&token_type) {
+        if upgrade_weapon.devices.iter().any(|d| d.device_id == device_id && d.token_type == token_type) {
             return Err(ErrorCode::DuplicatedDevice.into());
         }
 
@@ -134,6 +133,13 @@ mod upgrade_weapon {
         )?;
 
         msg!("Token mint process completed successfully.");
+
+        upgrade_weapon.devices.push(
+            TokenDevice {
+                token_type: token_type,
+                device_id: device_id,
+            }
+        );
 
         invoke(
             &mpl_token_metadata::instruction::create_master_edition_v3(
@@ -257,15 +263,16 @@ mod upgrade_weapon {
         pub token_type_uris: Vec<TokenTypeURI>,
         pub name: String,
         pub symbol: String,
+        pub devices: Vec<TokenDevice>,
     }
 
     #[account]
     pub struct UWDeviceAccount {
         pub token_type: Vec<u8>,
+        pub device_id: String,
     }
 
     #[derive(Accounts)]
-    #[instruction(token_type: u8, device_id: String)]
     pub struct MintToken<'info> {
         /// CHECK: This is the token that we want to mint
         #[account(mut)]
@@ -292,14 +299,6 @@ mod upgrade_weapon {
             space = 8 + 2 + 4 + 200 + 1, seeds = [b"weapon", mint.key().as_ref()], bump
         )]
         pub weapon_account: Account<'info, Weapon>,
-
-        /// CHECK: We will create this outside
-        #[account(
-            init,
-            payer = authority,
-            space = 8, seeds = [b"deviceData", &token_type.ref, &device_id.as_bytes().as_ref()], bump
-        )]
-        pub device_account: Account<'info, UWDeviceAccount>,        
 
         /// CHECK: We will create this outside
         #[account(mut)]
