@@ -4,8 +4,9 @@ use anchor_lang::solana_program::program::invoke;
 use anchor_spl::token::{MintTo, Token};
 use mpl_token_metadata;
 use std::mem::size_of;
+use mpl_token_metadata::state::{Creator};
 
-declare_id!("HbtfwD3hs3jzJmAAf6TmVA7m28Xmj78HgPuehVM6cWbe");
+declare_id!("C7KQdF6atRDnJe9cCLomcESLFZCtYa9SEpRT5i9Y4J3u");
 
 #[program]
 mod upgrade_weapon {
@@ -15,25 +16,26 @@ mod upgrade_weapon {
 
     pub fn initialize(ctx: Context<Initialize>, name: String, symbol: String) -> ProgramResult {
         msg!("Initializing upgrade weapon program");
-        let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
-        upgrade_weapon.token_counter = 0;
+        let upgrade_weapon: &mut Box<Account<'_, UpgradeWeapon>> = &mut ctx.accounts.upgrade_weapon;
+        upgrade_weapon.token_counter = [0, 0, 0, 0, 0];
         upgrade_weapon.token_type_counter = 0;
         upgrade_weapon.name = name;
         upgrade_weapon.symbol = symbol;
         upgrade_weapon.token_types = vec![];
         upgrade_weapon.token_type_uris = vec![];
-        upgrade_weapon.devices = vec![];
 
         Ok(())
     }
 
-    pub fn mint(ctx: Context<MintToken>, token_type: u8, device_id: String) -> ProgramResult {
+    pub fn mint(ctx: Context<MintToken>, token_type: u8) -> ProgramResult {
         let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
-
-        if upgrade_weapon.devices.iter().any(|d| d.device_id == device_id && d.token_type == token_type) {
+        let nft_account = &mut ctx.accounts.nft_account;
+    
+        if nft_account.token_type[token_type as usize] == 1 {
             return Err(ErrorCode::DuplicatedDevice.into());
         }
-
+        nft_account.token_type[token_type as usize] = 1;
+    
         anchor_lang::system_program::create_account(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -90,19 +92,48 @@ mod upgrade_weapon {
             token_type: u64_token_type,
         });
 
-        upgrade_weapon.token_counter += 1;
 
         // Execute anchor's helper function to mint tokens
         anchor_spl::token::mint_to(cpi_ctx, 1)?;
-
-        msg!("Token mint process successfully.");
 
         let index = upgrade_weapon
             .token_type_uris
             .iter()
             .position(|t| t.id == u64_token_type)
             .unwrap();
+
         let token_type_uri = upgrade_weapon.token_type_uris[index].clone();
+
+        if token_type != 4 && token_type != 0 {
+            if upgrade_weapon.token_counter[token_type as usize] >= 200 {
+                return Err(ErrorCode::NftLimitExceeded.into());
+            }
+        }
+
+        upgrade_weapon.token_counter[token_type as usize] += 1;
+        
+
+        let cpi_context = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(), 
+            system_program::Transfer {
+                from: ctx.accounts.authority.to_account_info(),
+                to: ctx.accounts.owner.to_account_info(),
+            });
+
+        if token_type != 0 && token_type != 4 {
+            system_program::transfer(cpi_context, 100000000)?;
+        }
+
+        let creators = vec![
+            Creator {
+                address: ctx.accounts.owner.key(),
+                verified: true,
+                share: 100,
+            },
+            // Add more creators if needed
+        ];
+
+        msg!(&ctx.accounts.owner.key().to_string());
 
         invoke(
             &mpl_token_metadata::instruction::create_metadata_accounts_v3(
@@ -111,12 +142,12 @@ mod upgrade_weapon {
                 ctx.accounts.mint.key(),
                 ctx.accounts.authority.key(),
                 ctx.accounts.authority.key(),
-                ctx.accounts.authority.key(),
+                ctx.accounts.owner.key(),
                 token_type_uri.name.clone(),
                 upgrade_weapon.symbol.clone(),
-                token_type_uri.token_uri + "/2/" + &ctx.accounts.weapon_account.key().to_string(),
-                None,
-                1,
+                token_type_uri.token_uri + "/2/" + &ctx.accounts.weapon_account.key().to_string() + "/" + &upgrade_weapon.token_counter[token_type as usize].to_string(),
+                Some(creators),
+                500,
                 true,
                 false,
                 None,
@@ -129,24 +160,18 @@ mod upgrade_weapon {
                 ctx.accounts.token_account.to_account_info(),
                 ctx.accounts.authority.to_account_info(),
                 ctx.accounts.rent.to_account_info(),
+                ctx.accounts.owner.to_account_info(),
             ],
         )?;
 
         msg!("Token mint process completed successfully.");
-
-        upgrade_weapon.devices.push(
-            TokenDevice {
-                token_type: token_type,
-                device_id: device_id,
-            }
-        );
 
         invoke(
             &mpl_token_metadata::instruction::create_master_edition_v3(
                 mpl_token_metadata::ID,
                 ctx.accounts.edition.key(),
                 ctx.accounts.mint.key(),
-                ctx.accounts.authority.key(),
+                ctx.accounts.owner.key(),
                 ctx.accounts.authority.key(),
                 ctx.accounts.metadata_account.key(),
                 ctx.accounts.authority.key(),
@@ -159,6 +184,29 @@ mod upgrade_weapon {
                 ctx.accounts.token_account.to_account_info(),
                 ctx.accounts.authority.to_account_info(),
                 ctx.accounts.rent.to_account_info(),
+                ctx.accounts.owner.to_account_info(),
+            ],
+        )?;
+
+        invoke(
+            &mpl_token_metadata::instruction::set_and_verify_sized_collection_item(
+                mpl_token_metadata::ID,
+                ctx.accounts.metadata_account.key(),
+                ctx.accounts.owner.key(),
+                ctx.accounts.authority.key(),
+                ctx.accounts.owner.key(),
+                ctx.accounts.collection_mint.key(),
+                ctx.accounts.collection.key(),
+                ctx.accounts.collection_master_edition.key(),
+                None,
+            ),
+            &[
+                ctx.accounts.owner.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.metadata_account.to_account_info(),
+                ctx.accounts.collection_mint.to_account_info(),
+                ctx.accounts.collection.to_account_info(),
+                ctx.accounts.collection_master_edition.to_account_info(),
             ],
         )?;
 
@@ -195,6 +243,29 @@ mod upgrade_weapon {
         });
         upgrade_weapon.token_type_counter += 1;
 
+        Ok(())
+    }
+
+    pub fn add_token_types(ctx: Context<AddTokenType>, token_uris: Vec<String>, names: Vec<String>) -> ProgramResult {
+        let upgrade_weapon = &mut ctx.accounts.upgrade_weapon;
+    
+        msg!("Adding tokens");
+        
+        // Iterate over the token_uris and names to add tokens
+        for (token_uri, name) in token_uris.into_iter().zip(names) {
+            let token_type_counter = upgrade_weapon.token_type_counter;
+    
+            msg!(&token_uri);
+            msg!(&token_type_counter.to_string());
+    
+            upgrade_weapon.token_type_uris.push(TokenTypeURI {
+                id: token_type_counter,
+                token_uri,
+                name,
+            });
+            upgrade_weapon.token_type_counter += 1;
+        }
+    
         Ok(())
     }
 
@@ -257,19 +328,17 @@ mod upgrade_weapon {
 
     #[account]
     pub struct UpgradeWeapon {
-        pub token_counter: u64,
+        pub token_counter: [u64; 5],
         pub token_type_counter: u64,
         pub token_types: Vec<TokenType>,
         pub token_type_uris: Vec<TokenTypeURI>,
         pub name: String,
         pub symbol: String,
-        pub devices: Vec<TokenDevice>,
     }
 
     #[account]
-    pub struct UWDeviceAccount {
-        pub token_type: Vec<u8>,
-        pub device_id: String,
+    pub struct MintedNFTAccount {
+        pub token_type: [u8; 5],
     }
 
     #[derive(Accounts)]
@@ -288,6 +357,9 @@ mod upgrade_weapon {
         #[account(mut)]
         pub authority: Signer<'info>,
 
+        #[account(mut, address=solana_program::pubkey!("2Jxxms25kixad7877JuD5UvDDp2F4Zf3X2qbceKv3PTj"))]
+        pub owner: Signer<'info>,
+
         /// CHECK: We will create this outside
         #[account(mut)]
         pub metadata_account: UncheckedAccount<'info>,
@@ -304,7 +376,24 @@ mod upgrade_weapon {
         #[account(mut)]
         pub edition: UncheckedAccount<'info>,
 
+        /// CHECK: We will create this outside
+        #[account(mut)]
+        pub collection: UncheckedAccount<'info>,
+
+        /// CHECK: We will create this outside
+        pub collection_mint: UncheckedAccount<'info>,
+
+        /// CHECK: We will create this outside
+        pub collection_master_edition: UncheckedAccount<'info>,
+
         pub rent: Sysvar<'info, Rent>,
+
+        #[account(
+            init_if_needed,
+            payer = authority,
+            space = 8 + 2 + 4 + 200 + 1, seeds = [b"mintedNFT", authority.key().as_ref()], bump
+        )]
+        pub nft_account: Box<Account<'info, MintedNFTAccount>>,
 
         /// CHECK: We will create this outside
         pub system_program: Program<'info, System>,
@@ -469,6 +558,8 @@ mod upgrade_weapon {
         InvalidTokenOwner,
         InvalidBalance,
         DuplicatedDevice,
+        InvalidSignature,
+        NftLimitExceeded,
     }
 
     impl From<ErrorCode> for ProgramError {
@@ -479,6 +570,8 @@ mod upgrade_weapon {
                 ErrorCode::InvalidTokenOwner => ProgramError::Custom(3),
                 ErrorCode::InvalidBalance => ProgramError::Custom(4),
                 ErrorCode::DuplicatedDevice => ProgramError::Custom(5),
+                ErrorCode::InvalidSignature => ProgramError::Custom(6),
+                ErrorCode::NftLimitExceeded => ProgramError::Custom(8),
             }
         }
     }
@@ -522,7 +615,6 @@ mod upgrade_weapon {
     }
 
     #[derive(Accounts)]
-    #[instruction(level: [u64; 6])]
     pub struct UpgradeWeaponLevel<'info> {
         #[account(mut)]
         pub owner: Signer<'info>,
@@ -530,7 +622,7 @@ mod upgrade_weapon {
         #[account(mut)]
         pub weapon_account: Account<'info, Weapon>,
 
-        #[account(mut, address=solana_program::pubkey!("A1cjGLEjuiw946mrHFCcWZggQDW89j3ViaqBXLsfojaF"))]
+        #[account(mut, address=solana_program::pubkey!("2Jxxms25kixad7877JuD5UvDDp2F4Zf3X2qbceKv3PTj"))]
         pub authority: Signer<'info>,
     }
 

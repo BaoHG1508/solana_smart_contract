@@ -2026,18 +2026,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "upgrade_weapon_gold"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "mpl-token-metadata",
- "solana-program",
- "toml_datetime",
- "winnow",
-]
-
-[[package]]
 name = "uriparse"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
